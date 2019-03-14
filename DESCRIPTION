@@ -25,7 +25,9 @@ Imports:
     MASS
 Suggests:
     ResourceSelection,
-    testthat
+    testthat,
+    knitr,
+    rmarkdown
 Description: An open source platform for validation and process control.
     Tools to analyze data from internal validation of forensic short tandem
     repeat (STR) kits are provided. The tools are developed to provide
@@ -36,5 +38,6 @@ Description: An open source platform for validation and process control.
     More information about each function can be found in the
     respective help documentation.
 License: GPL-2
-RoxygenNote: 6.1.1
+RoxygenNote: 6.1.1.9000
 Encoding: UTF-8
+VignetteBuilder: knitr

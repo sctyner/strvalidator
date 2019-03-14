@@ -1,0 +1,187 @@
+---
+title: "STR-validator 2.0.0 Tutorial: No GUI"
+author: "Oskar Hansson, Sam Tyner"
+date: "`r Sys.Date()`"
+output: 
+  rmarkdown::html_vignette: 
+    fig_caption: yes
+vignette: >
+  %\VignetteIndexEntry{STR-validator 2.0.0 Tutorial: No GUI}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+# `strvalidator`
+
+This vignette is a recreation of the the [STR-validator 2.0.0 tutorial](https://drive.google.com/file/d/0B2v6NDpFIgvDel9wSlFfb3hvekk/view). Whereas everything there was done in the GUI, this vignette will perform the same tasks with R code only, no GUI needed. 
+
+As in the GUI tutorial, this vignette uses the datasets stored as text files 'set3.txt' and 'ref3.txt', located in the package directory for external data. Plots and results were created on a MacBook Pro running Mojave (10.14.3). 
+
+We'll need some helper packages, [`dplyr`](https://CRAN.R-project.org/package=dplyr) and [`ggplot2`](https://CRAN.R-project.org/package=ggplot2) for data manipulation and plotting. We also use DT to view tables in the vignette.
+
+```{r pkgs}
+library(dplyr)
+library(ggplot2)
+library(strvalidator)
+library(DT)
+```
+
+## Import data and create project
+
+First, create a new R project. In RStudio, this can be done with File > New Project.... Create a new directory or put the project in the same directory as your DNA data. You can also set your working directory in R as you would any R project with `setwd()`. 
+
+### Import the data
+
+Since we'll be working in R directly, I (ST) don't advise working in the same directory as the `strvalidator` package files. We don't want to accidentally delete any package files. Again, set the working directory somewhere that makes sense for you, such as the same directory where your DNA data exported from e.g. GeneMapperID® are. 
+
+As in the GUI tutorial, we'll use the sample data sets stored in the package. 
+
+```{r import}
+# get the location of the sample data sets. 
+data_loc <- paste0(path.package("strvalidator"), "/extdata")
+
+# import the data 
+set3 <- import(prefix="set3", file.name = TRUE,  # file.name for keeping the file name set3.txt
+               # where are the data? 
+               folder.name = data_loc, folder = TRUE, 
+               # turn on trimming and slimming
+               auto.trim = TRUE, auto.slim = TRUE,  
+                # sample names to be trimmed, keep samples 
+               trim.samples = c("Pos|Neg|Ladder"), trim.invert = TRUE) 
+# import the reference data 
+ref3 <- import(prefix="ref3", file.name = TRUE,
+               folder.name = data_loc, folder = TRUE, 
+               auto.trim = TRUE, auto.slim = TRUE, 
+               trim.samples = c("Pos|Neg|Ladder"), trim.invert = TRUE)
+```
+
+### View the data 
+
+```{r view}
+datatable(set3, caption = "Set3 data")
+datatable(ref3, caption = "Ref3 data")
+```
+
+### Save Project
+
+You can save your project in RStudio by going to Tools > Project Options > General and for Restore .RData into workspace at startup and Save workspace to .RData on exit, select Yes from the dropdown menu. 
+
+### Open project
+
+To open a project, find the .Rproj file you created in the Import and Create Data Section and open it in RStudio.  
+
+
+## Stutter analysis
+
+### Calculate stutters 
+
+We use `set3` as the `data` and `ref3` as the `ref`. 
+
+- First, run the `checkSubset()` function to make sure the grouping of samples between `data` and `ref` are accurate and match. 
+- Then, supply the false stutter values and true stutter values for your data. The values given below are the defaults for `strvalidator`. 
+- Calculate the stutter with `calculateStutter()`. Provide the parameters 
+    - `back` : backward stutter
+    - `forward` : forward stutter
+    - `interference` : level of interference within the given range (0 for no overlap between stutters and alleles, 1 for stutter-stutter intereference allowed, and 2 for stutter-allele interference allowed)
+    - `replace.val`: false stutter values 
+    - `by.val` : true stutter values
+- Check the kit attribute is as expected (ESX17) and save the kit info. 
+
+```{r}
+checkSubset(data = set3, ref = ref3)
+# supply the false stutter and true stutter values for your data 
+stutter_false_val <- c(-1.9, -1.8, -1.7, -0.9, -0.8, -0.7, 0.9, 0.8, 0.7)
+stutter_replace_val <- c(-1.3, -1.2, -1.1, -0.3, -0.2, -0.1, 0.3, 0.2, 0.1)
+# calculate the stutter values 
+set3_stutter <- calculateStutter(set3, ref3, back = 2, forward = 1, interference = 0, 
+                 replace.val = stutter_false_val, by.val = stutter_replace_val)
+# check the first kit detected is correct
+detectKit(set3_stutter)[1]
+kit3 <- detectKit(set3_stutter)[1]
+# save kit info
+kitinfo <- getKit(kit3)
+```
+
+Then, view the stutter and kit data: 
+
+```{r}
+datatable(set3_stutter, caption = "Stutter data")
+datatable(kitinfo, caption = "Kit information")
+```
+
+
+### Plot stutters 
+
+Before plotting the data, we need to make sure the data is in the right form for plotting
+
+- Add dye information
+- Sort by marker & remove sex markers
+- Round & factorize type
+- Ensure Height (allele & stutter) is numeric
+
+
+```{r dataforplot}
+# what are the sex markers for this kit?
+sexMarkers <-  getKit(kit3, what = "Sex.Marker")
+
+addColor(set3_stutter, kit = kit3) %>% 
+  sortMarker(kit = kit3, add.missing.levels = TRUE) %>% # sort by marker
+  filter(!(Marker %in% sexMarkers)) %>%  # remove sex markers 
+  mutate(Type = factor(round(Type, 2)), 
+         HeightA = as.numeric(as.character(HeightA)), 
+         HeightS = as.numeric(as.character(HeightS))
+         ) -> plottingdata
+```
+
+**Ratio vs. Allele**
+
+```{r ratvall, fig.cap="Stutter ratio as a function of parent allele.", fig.width=9, fig.height=8}
+ggplot(data = plottingdata, aes(x = Allele, y = Ratio, color = Type)) + 
+  geom_point(shape = 18, alpha = .6, position = position_jitter(height = 0 , width = .1)) + 
+  facet_wrap( ~ Marker, scales = "free_x", ncol = 4) +
+  theme(axis.text.x = element_text(angle = 270, vjust = .5, hjust = 0)) + 
+  labs(x = "True Allele",  y= "Ratio", title = "Stutter ratios")
+```
+
+**Ratio vs  Height**
+
+```{r ratvheight, fig.cap="Stutter ratio as a function of height.", fig.width=9, fig.height=8}
+ggplot(data = plottingdata, aes(x = HeightA, y = Ratio, color = Type)) + 
+  geom_point(shape = 18, alpha = .6, position = position_jitter(height = 0 , width = .1)) + 
+  scale_x_continuous(breaks = scales::pretty_breaks()) + 
+  facet_wrap( ~ Marker, scales = "free_x", ncol = 4) +
+  theme(axis.text.x = element_text(angle = 270, vjust = .5, hjust = 0)) + 
+  labs(x = "True Allele (RFU)",  y= "Ratio", title = "Stutter ratios")
+```
+
+### Calculate summary statistics 
+
+Summarize the stutter data with `tableStutter()`. Use the 95th percentile, and arrange in decreasing order. 
+
+```{r} 
+summ_stutter <- tableStutter(set3_stutter, quant = .95) %>% 
+  arrange(desc(Perc.95)) 
+datatable(summ_stutter, caption = "Summary statistics for stutter data")
+```
+
+
+## Balance analysis
+
+## Drop-out analysis
+
+## Result type analysis
+
+## Peak analysis
+
+## Precision analysis
+
+## Other useful functions
+
+## Export data and plots
